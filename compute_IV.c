@@ -17,7 +17,6 @@ typedef struct{
 } option_t;
     
 
-//inline double erf(const double x);
 inline double cube(const double x){return x*x*x;}
 inline double stdNormalCdf(const double x);
 inline double priceCallOption(const double sigma, const double S, const double r, const double K, const double T);
@@ -151,17 +150,16 @@ int main(int argc, char *argv[]){
     }
     
 
-    double r = 0.05; //This should be fixed to account for some model
+    double r = 0; //This should be fixed to account for some model
     double sigma;
     double K;
     double S = underlyingPrice;
     double T;
     double Cstar;
-    double tol=1e-5;
+    double tol=1e-3;
     int append_index = 0;
     int k;
-    int converged = 0;    
-    double sigmaGuesses[5] = {0.5, 2.5, 7.5, 9.5, 20.0};
+    double sigmaGuesses[5] = {0.1, 0.25, 0.5, 1.0, 1.5};
     
             for(int i=0;i<n_options;i++){
                 K = strikes[i];
@@ -172,18 +170,16 @@ int main(int argc, char *argv[]){
             for(k=0;k<5;k++){
                 sigma = sigmaGuesses[k];
           //Do  Newton iterations
-                for(int j=0; j<1000;j++){
+                for(int j=0; j<250;j++){
                         sigma -= (priceCallOption(sigma, S, r, K, T) - Cstar) / computeVega(sigma, S, r, K, T);
                     }
-                        if(abs(Cstar - priceCallOption(sigma, S, r, K, T)) > tol){
+                        if((abs(Cstar - priceCallOption(sigma, S, r, K, T)) > tol)){
                             BROKEN_TOL_COUNT++;
-                            printf("We do not have convergence for K=%lf, T=%lf, S=%lf, C_star=%lf, sigma_0 = %lf. Total failed IVs count %d. Total options=%d\n", K, T, S, Cstar, sigmaGuesses[k], BROKEN_TOL_COUNT, n_options);
-                        }
+                       }
                         else{
                             sigmas[append_index] = sigma;
                             strikes[append_index] =  S/K;
                             deltas[append_index] = computeDelta(sigma, S, r, K, T);
-                            printf("delta = %lf\n", deltas[append_index]);
                             append_index++;
                             break;
                         }

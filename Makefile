@@ -4,7 +4,10 @@
 CC = gcc
 
 # Compiler flags
-CFLAGS = -O3 -Wall
+CFLAGS = -O3 -Wall -Wall -ftree-vectorize
+
+#Link flags
+LFLAGS = -lm
 
 # Output executable name
 TARGET = compute_IV
@@ -17,8 +20,9 @@ all: $(TARGET)
 
 # Compile the source file
 $(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LFLAGS)
 
 # Clean up
 clean:
 	rm -f $(TARGET)
+

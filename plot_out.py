@@ -41,7 +41,7 @@ def read_data_from_binary_file(filename):
 
 
 def plot_smiles():
-    maturities, moneyness, vols, deltas = read_data_from_binary_file("out.bin")
+    maturities, moneyness, vols, deltas = read_data_from_binary_file("btc_BID_241218_C.bin")
 
     smiles = {}
     for i, T in enumerate(maturities):
@@ -72,7 +72,7 @@ def plot_png():
     x,y,z, deltas = read_data_from_binary_file("out.bin")
     
     
-    y = deltas 
+    
     x = [elem*365 for elem in x]
 
     xi = np.linspace(min(x), max(x), 250)
@@ -89,15 +89,12 @@ def plot_png():
     #surf = ax.plot_surface(xi, yi, zi, facecolors=colors, rstride=1, cstride=1, linewidth=0, antialiased=False)
     ax.scatter(x,y,z, color="m")
     # Plot the surface
-    surf = ax.plot_surface(xi, yi, Z, cmap="jet")
-    ax.plot_wireframe(xi, yi, Z, color="black", linewidth=0.5)
     ax.set_xlabel("Maturity T [days]")
-    ax.set_ylabel("$\Delta$")
+    ax.set_ylabel("$S/K$")
     ax.set_zlabel("Implied vol")
     ax.set_title("Vol surface for BTC calls (bid)")
     #Add colorbar to map colors to z values
-    fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10)    
-
+    
     plt.show()
 
     # Send the plot image

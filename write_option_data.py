@@ -56,17 +56,17 @@ def main():
         for option in btc.option_data:
 
             side_price = option[side +"Price"]
-            
             time_to_maturity = (option['expirationTime'] - btc.unix_epoch_time) / YEARLY_MILLI_SECONDS
             strike = get_strike_price(option['symbol'])
-            
+            vol = option['volatility']
             if optionType  == option['symbol'][-1] and float(side_price) != 0.0:
                
                 
                 row[0] = time_to_maturity
                 row[1] = strike
                 row[2] = side_price
-              
+          
+                 
                 for data in row:
                     packed_data = struct.pack('d', float(data))
                     f.write(packed_data)
