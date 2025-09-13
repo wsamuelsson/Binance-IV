@@ -150,17 +150,17 @@ int main(int argc, char *argv[]){
     }
     
 
-    double r = 0; //This should be fixed to account for some model
+    double r = 0.04; //This should be fixed to account for some model
     double sigma;
     double K;
     double S = underlyingPrice;
     double T;
     double Cstar;
-    double tol=1e-3;
+    double tol=1e-4;
     int append_index = 0;
     int k;
     double sigmaGuesses[5] = {0.1, 0.25, 0.5, 1.0, 1.5};
-    
+    int success = 0;
             for(int i=0;i<n_options;i++){
                 K = strikes[i];
                 T = maturties[i];
@@ -177,8 +177,9 @@ int main(int argc, char *argv[]){
                             BROKEN_TOL_COUNT++;
                        }
                         else{
+                            success++;
                             sigmas[append_index] = sigma;
-                            strikes[append_index] =  S/K;
+                            strikes[append_index] =  K;
                             deltas[append_index] = computeDelta(sigma, S, r, K, T);
                             append_index++;
                             break;
@@ -190,6 +191,7 @@ int main(int argc, char *argv[]){
 
 
     }
+    printf("Succesfully computed IV %d times\n", success);
     //Write to output file
     FILE * outfile;
     outfile = fopen("out.bin", "wb");
