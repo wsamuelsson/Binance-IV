@@ -1,136 +1,138 @@
-
 import struct
 import os
-from mpl_toolkits.mplot3d import Axes3D
-import numpy as np
-from scipy.interpolate import griddata
-from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
-from matplotlib import cm
-from mpld3 import fig_to_html
-from io import BytesIO
-from scipy.ndimage import gaussian_filter
+import numpy as np 
+import scipy.optimize as spopt
+from mpl_toolkits.mplot3d import Axes3D
 
-
-
-
-MAX_VOL = 100
+MAX_VOL = 1000
 
 def read_data_from_binary_file(filename):
     with open(filename, "rb") as file:
         struct_size = 32
-        num_options = int(os.stat(filename).st_size / struct_size) #One option correspoinds to 3 doubles
-        
-        maturities = []
-        moneyness = []
-        vols = []
-        deltas = []
+        num_options = int(os.stat(filename).st_size / struct_size)
+        maturities, strikes, vols, deltas = [], [], [], []
         print(f"Reading data for {num_options} options\n")
         for _ in range(num_options):
-           # Read maturity, moneyness, and vol for each option
-            option_data = file.read(struct_size)  # Assuming each option occupies 24 bytes (3 doubles)
-            option_values = struct.unpack('dddd', option_data)
-            if option_values[2] < MAX_VOL:
-                maturities.append(option_values[0])
-                moneyness.append(option_values[1])
-                vols.append(option_values[2])
-                deltas.append(option_values[3])
-           
+            option_data = file.read(struct_size)
+            T, K, vol, delta = struct.unpack('dddd', option_data)
+            if vol < MAX_VOL:
+                maturities.append(T); strikes.append(K); vols.append(vol); deltas.append(delta)
+    return maturities, strikes, vols, deltas
 
-    return maturities, moneyness, vols, deltas
-
-
-def plot_smiles():
-    maturities, moneyness, vols, deltas = read_data_from_binary_file("btc_BID_241218_C.bin")
-
-    smiles = {}
-    for i, T in enumerate(maturities):
-        if T not in smiles.keys():
-            smiles[T] = [[moneyness[i]], [vols[i]]]
-        elif T in smiles.keys():
-            smiles[T][0].append(moneyness[i])
-            smiles[T][1].append(vols[i])
+def sabr_vol(sigma_0, alpha, beta, rho, F_0, K, T, alpha_anchor=None):
     
-    # Plotting
-    #fig, axes = plt.subplots(nrows=len(smiles), ncols=3, figsize=(10, 6 * len(smiles)))
-
-    for i, (maturity, data) in enumerate(smiles.items()):
-        moneyness, implied_volatility = data
-        
-        plt.figure()
-        plt.scatter(moneyness, implied_volatility, marker='o')
-        plt.title(f"Implied Volatility vs. Moneyness - {maturity}")
-        plt.xlabel("Moneyness")
-        plt.ylabel("Implied Volatility")
-        plt.grid(True)
-
-    plt.tight_layout()
-    plt.show()
-
-def plot_png():
-    #maturities, moneyness, vols, deltas
-    x,y,z, deltas = read_data_from_binary_file("out.bin")
+    if alpha_anchor:
+        alpha = alpha_anchor
     
+    def C(mu):  
+        return mu**beta
+    def D(mu): 
+        return np.log((np.sqrt(1 - 2*rho*mu + mu*mu) + mu - rho) / (1 - rho))
+
+    zeta = alpha/(sigma_0*(1-beta)) * (F_0**(1-beta) - K**(1-beta))
+
+    epsilon = T * alpha**2
+
+    F_mid = np.sqrt(F_0 * K)
+
+    if K == F_0:
+        return sigma_0 / (F_0**(1 - beta))
+
+    gamma_1 = beta / F_mid
+    gamma_2 = -beta*(1-beta) / (F_mid**2)
+
+    mult = sigma_0 * C(F_mid) * np.log(F_0/K) / D(zeta) 
+    term_1 = (2*gamma_2 - gamma_1**2 + 1/(F_mid**2)) / 24.0 * (sigma_0 * C(F_mid) / alpha)**2
+    term_2 = (rho * gamma_1 / 4.0) * (sigma_0 * C(F_mid) / alpha)
+    term_3 = (2 - 3*rho**2) / 24.0
+
+    return mult * (1 + (term_1 + term_2 + term_3) * epsilon)
+
+def get_underlying_price(coin: str='btc') -> float:
+    with open(file=f"{coin}.bin", mode='rb') as f:
+        coin_price = struct.unpack('d', f.read(8))[0]
+    return coin_price
+
+def fit_sabr(F_0: float, strikes:np.array, sigmas: np.array, T: float):
+   
+
+    def sses(params):    
+        sigma_0, alpha, beta, rho = params
+        sse = 0.0
+        for i, K in enumerate(strikes):
+            model = sabr_vol(sigma_0=sigma_0, alpha=alpha, beta=beta, rho=rho, F_0=F_0, K=K, T=T)
+            sse += (model - sigmas[i])**2
+        return sse
     
+    sigma_0_lb = 0
+    sigma_0_ub = np.inf 
+
+    alpha_lb = 0
+    alpha_ub = np.inf
     
-    x = [elem*365 for elem in x]
+    beta_lb = 0
+    beta_ub = 0.995
+    
+    rho_lb = -0.990
+    rho_ub = 0.990
 
-    xi = np.linspace(min(x), max(x), 250)
-    yi = np.linspace(min(y), max(y), 250)
-    xi, yi = np.meshgrid(xi, yi)
+    result = spopt.minimize(
+        sses,
+        x0=[0.5, 0.5, 0.5, 0.0],
+        constraints=spopt.LinearConstraint(A=np.eye(4),
+                                           lb=np.array([sigma_0_lb, alpha_lb, beta_lb, rho_lb]),
+                                           ub=np.array([sigma_0_ub, alpha_ub, beta_ub, rho_ub]))
+    )
+    return result.x
 
-    Z = griddata((x,y), z, (xi, yi), method='linear')
-    # Apply Gaussian smoothing to the Z values
-    #Z_smooth = gaussian_filter(Z, sigma=0)  # You can adjust sigma for more or less smoothing
+def price_forward(S_0: float, T: float, r: float=0.04) -> float:
+    return np.exp(-r*T) * S_0 
 
-    # Plot the surface
-    fig = plt.figure()
+
+def main():
+    maturities, strikes, vols, deltas = read_data_from_binary_file("out.bin")
+    maturities = np.array(maturities, float)
+    strikes    = np.array(strikes, float)
+    vols       = np.array(vols, float)
+
+    unique_T = np.unique(maturities)
+    K_min, K_max = strikes.min(), strikes.max()
+    K_grid = np.linspace(K_min, K_max, 80)   
+    T_grid = np.array(unique_T)              
+    
+    IV_surface = np.zeros((len(T_grid), len(K_grid)))
+
+    for j, T in enumerate(T_grid):
+        mask = (maturities == T)
+        K_obs = strikes[mask]
+        IV_obs = vols[mask]
+
+        F_0 = price_forward(get_underlying_price(), T)
+        sigma_0, alpha, beta, rho = fit_sabr(F_0=F_0, strikes=K_obs, sigmas=IV_obs, T=T)
+
+        for i, K in enumerate(K_grid):
+            IV_surface[j, i] = sabr_vol(
+                sigma_0=sigma_0, alpha=alpha, beta=beta, rho=rho,
+                F_0=F_0, K=K, T=T
+            )
+
+    # meshgrid for plotting
+    KK, TT = np.meshgrid(K_grid, T_grid*365)  # T in days
+
+    # plot
+    fig = plt.figure(figsize=(10,7))
     ax = fig.add_subplot(111, projection='3d')
-    #surf = ax.plot_surface(xi, yi, zi, facecolors=colors, rstride=1, cstride=1, linewidth=0, antialiased=False)
-    ax.scatter(x,y,z, color="m")
-    # Plot the surface
-    ax.set_xlabel("Maturity T [days]")
-    ax.set_ylabel("$S/K$")
-    ax.set_zlabel("Implied vol")
-    ax.set_title("Vol surface for BTC calls (bid)")
-    #Add colorbar to map colors to z values
+    surf = ax.plot_surface(KK, TT, IV_surface, cmap='viridis', alpha=0.85, linewidth=0)
+    ax.scatter(xs=strikes, ys=[t*365 for t in maturities], zs=vols)
     
+    
+    ax.set_xlabel("Strike")
+    ax.set_ylabel("Maturity (days)")
+    ax.set_zlabel("Implied vol")
+    fig.colorbar(surf, shrink=0.5, aspect=10)
+    plt.title("SABR calibrated volatility surface")
     plt.show()
 
-    # Send the plot image
-
-if __name__ == '__main__':
-    plot_png()
-
-def sigma_svi(x, delta, mu, rho, omega, zeta):
-    """Natural SVI parameterization with barrier penalties for 
-    constraints"""
-    lambd_a = 0.1
-    
-    rho_pen_g = (-rho + 1) #rho < 1 <-> -rho + 1 > 0
-    rho_pen_l = (rho + 1) #-rho < 1 <-> rho - 1 > 0
-
-    zeta_pen = zeta #zeta > 0
-    omega_pen = omega # omega > 0
-
-    pens = [rho_pen_g, rho_pen_l, zeta_pen, omega_pen]
-    
-    log_pen = sum([np.log(pen) for pen in pens])
-    
-    return delta + omega*0.5*(1+zeta*rho*(x - mu)+np.sqrt((zeta*(x-mu)+rho)**2 + (1-rho**2))) - lambd_a*log_pen
-
-"""
-maturities,moneyness,implied_vols, deltas = read_data_from_binary_file("out.bin")
-
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.scatter(maturities, moneyness, implied_vols, c='r', marker='o')
-
-ax.set_xlabel('Maturity')
-ax.set_ylabel('Moneyness')
-ax.set_zlabel('Implied Volatility')
-
-plt.show()
-
-"""
-
+if __name__ == "__main__":
+    main()
