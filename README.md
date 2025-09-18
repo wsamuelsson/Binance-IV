@@ -1,5 +1,5 @@
 # Binance-IV
-Unfinished Project for scraping and computing IV for BTC Options on Binance
+Project for scraping and computing IV for BTC Options on Binance
 
 To get vol surface: 
 Make plotBTCIVS.sh exectuble by running: chmod +X plotBTCIVS.sh
