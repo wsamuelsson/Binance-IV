@@ -20,6 +20,7 @@ typedef struct{
 inline double cube(const double x){return x*x*x;}
 inline double stdNormalCdf(const double x);
 inline double priceCallOption(const double sigma, const double S, const double r, const double K, const double T);
+inline double pricePutOption(const double sigma, const double S, const double r, const double K, const double T);
 inline double computeVega(const double sigma, const double S, const double r, const double K, const double T);
 inline double computeDelta(const double sigma, const double S, const double r, const double K, const double T);
 
@@ -34,6 +35,7 @@ int main(int argc, char *argv[]){
     char symbol = *argv[1];
     char side = *argv[2];
     char optionType = *argv[3];
+    double  (*pricingFunction)(const double, const double, const double, const double, const double);
 
 
     char coin[4];
@@ -72,9 +74,18 @@ int main(int argc, char *argv[]){
     }
     
     
-    if(optionType != 'p' && optionType != 'c'){
+    switch (optionType)
+    {
+    case 'p':
+        pricingFunction = pricePutOption;
+        break;
+    case 'c':
+        pricingFunction = priceCallOption;
+        break;
+    default:
         printf("Error parsing type: type must be c/p (call/put)\n");
         return -1;
+        break;
     }
 
     time_t currentTime;
@@ -155,25 +166,27 @@ int main(int argc, char *argv[]){
     double K;
     double S = underlyingPrice;
     double T;
-    double Cstar;
+    double optionStar;
     double tol=1e-4;
     int append_index = 0;
     int k;
     double sigmaGuesses[5] = {0.1, 0.25, 0.5, 1.0, 1.5};
+
+    
     int success = 0;
             for(int i=0;i<n_options;i++){
                 K = strikes[i];
                 T = maturties[i];
-                Cstar = prices[i];
+                optionStar = prices[i];
             
             
             for(k=0;k<5;k++){
                 sigma = sigmaGuesses[k];
           //Do  Newton iterations
                 for(int j=0; j<250;j++){
-                        sigma -= (priceCallOption(sigma, S, r, K, T) - Cstar) / computeVega(sigma, S, r, K, T);
+                        sigma -= (pricingFunction(sigma, S, r, K, T) - optionStar) / computeVega(sigma, S, r, K, T);
                     }
-                        if((abs(Cstar - priceCallOption(sigma, S, r, K, T)) > tol)){
+                        if((abs(optionStar - pricingFunction(sigma, S, r, K, T)) > tol)){
                             BROKEN_TOL_COUNT++;
                        }
                         else{
@@ -194,7 +207,9 @@ int main(int argc, char *argv[]){
     printf("Succesfully computed IV %d times\n", success);
     //Write to output file
     FILE * outfile;
-    outfile = fopen("out.bin", "wb");
+    char out_filename[64];
+    snprintf(out_filename, sizeof(out_filename), "out_%c.bin", optionType);
+    outfile = fopen(out_filename, "wb");
     for(int i=0; i<append_index;i++){
         fwrite(&maturties[i], sizeof(double), 1, outfile);
         fwrite(&strikes[i], sizeof(double), 1, outfile); //We are using this for moneyness here
@@ -225,6 +240,15 @@ double stdNormalCdf(const double x){
     return 0.5*(1+erf(x/sqrt(2)));
 }
 
+double pricePutOption(const double sigma, const double S, const double r, const double K, const double T){
+    double sqrtT = sqrt(T);
+    
+    double d1 = (log(S/K) + (r + sigma*sigma*0.5)*T)/(sigma*sqrtT);
+    double d2 = d1 - sigma*sqrtT;
+
+    return  K*pow(E, -r*T) * stdNormalCdf(-d2) - S*stdNormalCdf(-d1);
+}
+
 double priceCallOption(const double sigma, const double S, const double r, const double K, const double T){
     double sqrtT = sqrt(T);
     
@@ -233,7 +257,6 @@ double priceCallOption(const double sigma, const double S, const double r, const
 
     return S*stdNormalCdf(d1) - K*pow(E, -r*T) * stdNormalCdf(d2);
 }
-
 double computeVega(const double sigma, const double S, const double r, const double K, const double T){
     double sqrtT = sqrt(T);
     double d1 = (log(S/K) + (r + sigma*sigma*0.5)*T)/(sigma*sqrtT);
